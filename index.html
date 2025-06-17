@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Dự Đoán Tài Xỉu</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #1e1e2f;
+      color: #fff;
+      padding: 20px;
+    }
+    .box {
+      background: #2c2c40;
+      padding: 20px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+    }
+    .title {
+      font-size: 24px;
+      color: #00e0ff;
+      margin-bottom: 10px;
+    }
+    .session {
+      border-bottom: 1px solid #444;
+      padding: 5px 0;
+    }
+    .prediction {
+      font-size: 20px;
+      font-weight: bold;
+      color: #ffdd57;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="box">
+    <div class="title">🔮 10 Phiên Gần Nhất</div>
+    <div id="history"></div>
+  </div>
+
+  <div class="box">
+    <div class="title">📈 Dự Đoán Phiên Tiếp Theo</div>
+    <div class="prediction" id="nextPrediction">Đang phân tích...</div>
+  </div>
+
+  <script>
+    async function fetchData() {
+      try {
+        const res = await fetch('https://taixiu1.gsum01.com/api/luckydice1/GetSoiCau');
+        const data = await res.json();
+        return data.slice(0, 10); // lấy 10 phiên gần nhất
+      } catch (e) {
+        console.error('Lỗi khi lấy dữ liệu API:', e);
+        return [];
+      }
+    }
+
+    function getResult(sum) {
+      return sum >= 11 ? 'Tài' : 'Xỉu';
+    }
+
+    function displayHistory(data) {
+      const historyDiv = document.getElementById('history');
+      historyDiv.innerHTML = '';
+      data.forEach(item => {
+        const sum = item.FirstDice + item.SecondDice + item.ThirdDice;
+        const result = getResult(sum);
+        const sessionHTML = `
+          <div class="session">
+            <b>Phiên ${item.SessionId}</b>: 🎲 ${item.FirstDice}-${item.SecondDice}-${item.ThirdDice} = <b>${sum}</b> → <b>${result}</b>
+          </div>
+        `;
+        historyDiv.innerHTML += sessionHTML;
+      });
+    }
+
+    function predictNext(data) {
+      // Dự đoán dựa trên tần suất
+      const counts = { Tài: 0, Xỉu: 0 };
+      data.forEach(item => {
+        const sum = item.FirstDice + item.SecondDice + item.ThirdDice;
+        const res = getResult(sum);
+        counts[res]++;
+      });
+
+      const prediction = counts['Tài'] > counts['Xỉu'] ? 'Tài' : 'Xỉu';
+      document.getElementById('nextPrediction').innerText = `👉 Dự đoán: ${prediction}`;
+    }
+
+    async function main() {
+      const data = await fetchData();
+      displayHistory(data);
+      predictNext(data);
+    }
+
+    // Chạy tự động mỗi 10 giây
+    main();
+    setInterval(main, 10000);
+  </script>
+
+</body>
+</html>
