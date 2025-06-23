@@ -2,62 +2,129 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
-  <title>Dự Đoán Tài Xỉu</title>
+  <title>TOOL TÀI XỈU - ENSEMBLE STRATEGY FIXED</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     body {
       font-family: Arial, sans-serif;
-      background: #1e1e2f;
-      color: #fff;
+      background-color: #f9f9f9;
+      color: #333;
       padding: 20px;
     }
-    .box {
-      background: #2c2c40;
-      padding: 20px;
-      border-radius: 10px;
-      margin-bottom: 20px;
+    #history .session {
+      padding: 8px;
+      border-bottom: 1px solid #ccc;
     }
-    .title {
-      font-size: 24px;
-      color: #00e0ff;
-      margin-bottom: 10px;
-    }
-    .session {
-      border-bottom: 1px solid #444;
-      padding: 5px 0;
-    }
-    .prediction {
-      font-size: 20px;
+    #nextPrediction {
       font-weight: bold;
-      color: #ffdd57;
+      font-size: 20px;
+      margin-top: 20px;
+      color: #d63384;
+    }
+    #currentStrategy {
+      margin: 10px 0;
+      font-weight: bold;
     }
   </style>
 </head>
 <body>
+  <h2>🎯 TOOL SUM ĐƯỢC BÓNG X</h2>
 
-  <div class="box">
-    <div class="title">🔮 10 Phiên Gần Nhất</div>
-    <div id="history"></div>
-  </div>
-
-  <div class="box">
-    <div class="title">📈 Dự Đoán Phiên Tiếp Theo</div>
-    <div class="prediction" id="nextPrediction">Đang phân tích...</div>
-  </div>
+  <div id="currentStrategy">⏳ Đang phân tích chiến lược...</div>
+  <div id="nextPrediction">Đang dự đoán...</div>
+  <div id="history">Đang tải dữ liệu...</div>
+  <canvas id="accuracyChart" width="400" height="200"></canvas>
 
   <script>
-    async function fetchData() {
-      try {
-        const res = await fetch('https://taixiu1.gsum01.com/api/luckydice1/GetSoiCau');
-        const data = await res.json();
-        return data.slice(0, 10); // lấy 10 phiên gần nhất
-      } catch (e) {
-        console.error('Lỗi khi lấy dữ liệu API:', e);
-        return [];
+    const TELEGRAM_TOKEN = "7785351537:AAHdxL61w6uRnJnRVkXrIFTfgH1I8fkoAhM";
+    const CHAT_IDS = ["-1002723056627"];
+    const ADMIN_ID = "6463176046";
+
+    const strategies = ["chain", "frequency", "random"];
+    let strategyStats = {
+      chain: { correct: 0, total: 0 },
+      frequency: { correct: 0, total: 0 },
+      random: { correct: 0, total: 0 },
+    };
+
+    let lastSentSessionId = null;
+    let correct = 0, wrong = 0;
+    let lastPrediction = null;
+    let lastPredictionSessionId = null;
+    let isBotEnabled = true;
+
+    const ctx = document.getElementById('accuracyChart').getContext('2d');
+    const accuracyChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'Độ chính xác (%)',
+          data: [],
+          borderColor: 'green',
+          fill: false
+        }]
       }
+    });
+
+    function updateChart(sessionId, accuracy) {
+      accuracyChart.data.labels.push(sessionId.toString());
+      accuracyChart.data.datasets[0].data.push(accuracy);
+      accuracyChart.update();
     }
 
     function getResult(sum) {
       return sum >= 11 ? 'Tài' : 'Xỉu';
+    }
+
+    function getVNTime() {
+      const now = new Date();
+      now.setHours(now.getHours() + 7);
+      return now.toTimeString().split(' ')[0] + ' - ' + now.toLocaleDateString('vi-VN');
+    }
+
+    function predictByStrategy(data, strategy) {
+      if (strategy === "frequency") {
+        const counts = { Tài: 0, Xỉu: 0 };
+        data.forEach(item => {
+          const sum = item.FirstDice + item.SecondDice + item.ThirdDice;
+          counts[getResult(sum)]++;
+        });
+        return counts['Tài'] >= counts['Xỉu'] ? 'Tài' : 'Xỉu';
+      } else if (strategy === "chain") {
+        const latest = getResult(data[0].FirstDice + data[0].SecondDice + data[0].ThirdDice);
+        return latest === 'Tài' ? 'Xỉu' : 'Tài';
+      } else {
+        return Math.random() < 0.5 ? 'Tài' : 'Xỉu';
+      }
+    }
+
+    function getFinalPrediction(data) {
+      const votes = { Tài: 0, Xỉu: 0 };
+      const individualPredictions = {};
+
+      strategies.forEach(strategy => {
+        const result = predictByStrategy(data, strategy);
+        votes[result]++;
+        individualPredictions[strategy] = result;
+      });
+
+      const finalPrediction = votes['Tài'] > votes['Xỉu'] ? 'Tài' :
+                              votes['Xỉu'] > votes['Tài'] ? 'Xỉu' :
+                              Math.random() < 0.5 ? 'Tài' : 'Xỉu';
+
+      return { finalPrediction, individualPredictions };
+    }
+
+    async function fetchData() {
+      try {
+        const res = await fetch('https://taixiu1.gsum01.com/api/luckydice1/GetSoiCau');
+        const data = await res.json();
+        return data.slice(0, 10);
+      } catch (e) {
+        console.error('Lỗi khi lấy API:', e);
+        return [];
+      }
     }
 
     function displayHistory(data) {
@@ -66,38 +133,129 @@
       data.forEach(item => {
         const sum = item.FirstDice + item.SecondDice + item.ThirdDice;
         const result = getResult(sum);
-        const sessionHTML = `
+        historyDiv.innerHTML += `
           <div class="session">
-            <b>Phiên ${item.SessionId}</b>: 🎲 ${item.FirstDice}-${item.SecondDice}-${item.ThirdDice} = <b>${sum}</b> → <b>${result}</b>
+            <b>Phiên ${item.SessionId}</b>: 🎲 ${item.FirstDice}-${item.SecondDice}-${item.ThirdDice} = <b>${sum}</b> ➜ <b>${result}</b>
           </div>
         `;
-        historyDiv.innerHTML += sessionHTML;
       });
     }
 
-    function predictNext(data) {
-      // Dự đoán dựa trên tần suất
-      const counts = { Tài: 0, Xỉu: 0 };
-      data.forEach(item => {
-        const sum = item.FirstDice + item.SecondDice + item.ThirdDice;
-        const res = getResult(sum);
-        counts[res]++;
-      });
+    async function sendTelegramMessage(message) {
+      const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
+      for (const chat_id of CHAT_IDS) {
+        try {
+          await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chat_id,
+              text: message,
+              parse_mode: "Markdown"
+            })
+          });
+        } catch (e) {
+          console.error("Lỗi gửi Telegram:", e);
+        }
+      }
+    }
 
-      const prediction = counts['Tài'] > counts['Xỉu'] ? 'Tài' : 'Xỉu';
-      document.getElementById('nextPrediction').innerText = `👉 Dự đoán: ${prediction}`;
+    async function checkTelegramCommand() {
+      try {
+        const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/getUpdates`);
+        const data = await res.json();
+        const updates = data.result;
+        if (!updates || updates.length === 0) return;
+
+        const latest = updates[updates.length - 1];
+        const msg = latest.message;
+        if (!msg || msg.from.id.toString() !== ADMIN_ID) return;
+
+        const text = msg.text.toLowerCase();
+        if (text === "/on") {
+          isBotEnabled = true;
+          await sendTelegramMessage("✅ Bot đã *bật* gửi dự đoán.");
+        } else if (text === "/off") {
+          isBotEnabled = false;
+          await sendTelegramMessage("⛔ Bot đã *tắt* gửi dự đoán.");
+        }
+      } catch (e) {
+        console.error("Lỗi kiểm tra lệnh Telegram:", e);
+      }
+    }
+
+    async function predictNext(data) {
+      const current = data[0];
+      const sessionId = current.SessionId;
+      const currentResult = getResult(current.FirstDice + current.SecondDice + current.ThirdDice);
+
+      if (lastSentSessionId !== sessionId && isBotEnabled) {
+        lastSentSessionId = sessionId;
+
+        let msg = "";
+
+        if (lastPrediction && lastPredictionSessionId === sessionId - 1) {
+          const isCorrect = lastPrediction === currentResult;
+          if (isCorrect) correct++; else wrong++;
+
+          const accuracy = ((correct / (correct + wrong)) * 100).toFixed(1);
+          updateChart(sessionId, accuracy);
+
+          const { finalPrediction, individualPredictions } = getFinalPrediction(data);
+
+          for (const strategy in individualPredictions) {
+            const res = individualPredictions[strategy];
+            strategyStats[strategy].total++;
+            if (res === currentResult) strategyStats[strategy].correct++;
+          }
+
+          let strategyDetail = "";
+          for (const strategy in individualPredictions) {
+            const res = individualPredictions[strategy];
+            const sAcc = strategyStats[strategy];
+            const acc = sAcc.total > 0 ? ((sAcc.correct / sAcc.total) * 100).toFixed(1) : "0";
+            strategyDetail += `- ${strategy}: ${res} (${acc}%)\n`;
+          }
+
+          msg = `
+🎯 *TOOL TỔNG HỢP CHIẾN THUẬT* 🎯
+🆔 Phiên: ${sessionId}
+🎲 Kết quả: ${current.FirstDice}-${current.SecondDice}-${current.ThirdDice} ➜ *${currentResult}*
+
+📌 Dự đoán phiên trước (${lastPredictionSessionId}): *${lastPrediction}* → ${isCorrect ? '✅ ĐÚNG' : '❌ SAI'}
+🧠 Dự đoán từng chiến thuật:
+${strategyDetail}
+🔮 Dự đoán tiếp theo (${sessionId + 1}): *${finalPrediction}*
+📊 Độ chính xác tổng: *${accuracy}%* (${correct}/${correct + wrong})
+🕒 Giờ VN: ${getVNTime()}
+          `;
+          document.getElementById('nextPrediction').innerText = `👉 Dự đoán tiếp theo: ${finalPrediction}`;
+          document.getElementById('currentStrategy').innerText = `🧠 Tổng hợp: ${finalPrediction}`;
+          lastPrediction = finalPrediction;
+          lastPredictionSessionId = sessionId;
+        } else {
+          const { finalPrediction } = getFinalPrediction(data);
+          lastPrediction = finalPrediction;
+          lastPredictionSessionId = sessionId;
+          document.getElementById('nextPrediction').innerText = `👉 Dự đoán tiếp theo: ${finalPrediction}`;
+          document.getElementById('currentStrategy').innerText = `🧠 Tổng hợp: ${finalPrediction}`;
+        }
+
+        if (msg.trim()) await sendTelegramMessage(msg.trim());
+      }
     }
 
     async function main() {
       const data = await fetchData();
-      displayHistory(data);
-      predictNext(data);
+      if (data.length > 1) {
+        displayHistory(data);
+        await predictNext(data);
+        await checkTelegramCommand();
+      }
     }
 
-    // Chạy tự động mỗi 10 giây
     main();
     setInterval(main, 10000);
   </script>
-
 </body>
 </html>
